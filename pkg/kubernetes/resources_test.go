@@ -204,6 +204,36 @@ metadata:
 	s.assertLastPath("/api/v1/namespaces/test-namespace/pods/test-pod")
 }
 
+func (s *ResourcesTestSuite) TestResourcesCreateOrUpdatePartialFailureReportsAppliedResources() {
+	s.Run("names the resources applied before the failing one", func() {
+		_, err := s.core.ResourcesCreateOrUpdate(s.T().Context(), `apiVersion: v1
+kind: Pod
+metadata:
+  name: test-pod
+  namespace: test-namespace
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: missing-pod
+  namespace: test-namespace
+`)
+		s.Require().Error(err)
+		s.Contains(err.Error(), "already applied before this error: Pod test-namespace/test-pod")
+		s.Equal("test-namespace", s.appliedNamespace, "first document was applied")
+	})
+	s.Run("adds nothing when the first resource fails", func() {
+		_, err := s.core.ResourcesCreateOrUpdate(s.T().Context(), `apiVersion: v1
+kind: Pod
+metadata:
+  name: missing-pod
+  namespace: test-namespace
+`)
+		s.Require().Error(err)
+		s.NotContains(err.Error(), "already applied")
+	})
+}
+
 func (s *ResourcesTestSuite) captureAppliedObject(r *http.Request) {
 	var obj unstructured.Unstructured
 	if err := json.NewDecoder(r.Body).Decode(&obj); err != nil {

@@ -182,12 +182,12 @@ func (c *Core) resourcesCreateOrUpdate(ctx context.Context, resources []*unstruc
 		gvk := obj.GroupVersionKind()
 		gvr, rErr := c.resourceFor(&gvk)
 		if rErr != nil {
-			return nil, rErr
+			return nil, appliedBeforeError(resources[:i], rErr)
 		}
 
 		namespace, err := c.effectiveNamespace(&gvk, obj.GetNamespace())
 		if err != nil {
-			return nil, err
+			return nil, appliedBeforeError(resources[:i], err)
 		}
 		obj.SetNamespace(namespace)
 		resources[i], rErr = c.DynamicClient().Resource(*gvr).Namespace(namespace).Apply(ctx, obj.GetName(), obj, metav1.ApplyOptions{
@@ -195,7 +195,7 @@ func (c *Core) resourcesCreateOrUpdate(ctx context.Context, resources []*unstruc
 			Force:        true,
 		})
 		if rErr != nil {
-			return nil, rErr
+			return nil, appliedBeforeError(resources[:i], rErr)
 		}
 		// Clear the cache to ensure the next operation is performed on the latest exposed APIs (will change after the CRD creation)
 		if gvk.Kind == "CustomResourceDefinition" {
@@ -203,6 +203,23 @@ func (c *Core) resourcesCreateOrUpdate(ctx context.Context, resources []*unstruc
 		}
 	}
 	return resources, nil
+}
+
+// appliedBeforeError reports which resources of a multi-document apply were
+// already applied when a later one failed, so the caller doesn't assume nothing changed.
+func appliedBeforeError(applied []*unstructured.Unstructured, err error) error {
+	if len(applied) == 0 {
+		return err
+	}
+	names := make([]string, 0, len(applied))
+	for _, obj := range applied {
+		name := obj.GetName()
+		if obj.GetNamespace() != "" {
+			name = obj.GetNamespace() + "/" + name
+		}
+		names = append(names, obj.GetKind()+" "+name)
+	}
+	return fmt.Errorf("%w (already applied before this error: %s)", err, strings.Join(names, ", "))
 }
 
 func (c *Core) resourceFor(gvk *schema.GroupVersionKind) (*schema.GroupVersionResource, error) {
