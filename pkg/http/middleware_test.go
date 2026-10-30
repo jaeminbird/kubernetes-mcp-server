@@ -576,3 +576,50 @@ func (s *TrustProxyHeadersSuite) TestReloadObserved() {
 			"post-reload request must honor X-Forwarded-For (trust_proxy_headers=true)")
 	})
 }
+
+// SpanNameSuite reuses the in-memory tracer setup of TrustProxyHeadersSuite.
+type SpanNameSuite struct {
+	TrustProxyHeadersSuite
+}
+
+func (s *SpanNameSuite) span(method, path string) (string, map[string]attribute.Value) {
+	s.T().Helper()
+	s.spanRecorder.Reset()
+	handler := RequestMiddleware(cfgStateWithTrustProxy(false))(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, path, nil))
+	ended := s.spanRecorder.Ended()
+	s.Require().Len(ended, 1, "expected exactly one span to be recorded")
+	attrs := make(map[string]attribute.Value, len(ended[0].Attributes()))
+	for _, kv := range ended[0].Attributes() {
+		attrs[string(kv.Key)] = kv.Value
+	}
+	return ended[0].Name(), attrs
+}
+
+func (s *SpanNameSuite) TestSpanName() {
+	s.Run("known route is in the span name and http.route", func() {
+		name, attrs := s.span(http.MethodPost, "/mcp")
+		s.Equal("POST /mcp", name)
+		s.Equal("/mcp", attrs["http.route"].AsString())
+	})
+	s.Run("well-known paths share one route", func() {
+		name, attrs := s.span(http.MethodGet, "/.well-known/oauth-protected-resource/mcp")
+		s.Equal("GET /.well-known/*", name)
+		s.Equal("/.well-known/*", attrs["http.route"].AsString())
+		s.Equal("/.well-known/oauth-protected-resource/mcp", attrs["url.path"].AsString())
+	})
+	s.Run("unmatched paths use the method alone", func() {
+		for _, path := range []string{"/scan/1", "/scan/2", "/windows/win.ini"} {
+			name, attrs := s.span(http.MethodGet, path)
+			s.Equal("GET", name)
+			s.NotContains(attrs, attribute.Key("http.route"))
+			s.Equal(path, attrs["url.path"].AsString(), "url.path keeps the raw path")
+		}
+	})
+}
+
+func TestSpanName(t *testing.T) {
+	suite.Run(t, new(SpanNameSuite))
+}

@@ -69,14 +69,16 @@ func getClientIP(r *http.Request, trustProxy bool) string {
 func getHTTPRoute(path string) string {
 	// Known routes for this server
 	switch path {
-	case "/healthz", "/mcp", "/stats":
+	case "/healthz", "/mcp", "/stats", "/metrics":
 		return path
 	}
 	// Check for well-known prefix
 	if strings.HasPrefix(path, "/.well-known/") {
 		return "/.well-known/*"
 	}
-	return path
+	// No matched route: the raw path would give every distinct request its
+	// own span name, so leave the route empty (OTel HTTP semantic conventions).
+	return ""
 }
 
 // RequestMiddleware creates OpenTelemetry spans for HTTP requests.
@@ -118,7 +120,10 @@ func RequestMiddleware(cfgState *config.ConfigState) func(http.Handler) http.Han
 
 			// Determine HTTP route for span naming
 			route := getHTTPRoute(r.URL.Path)
-			spanName := fmt.Sprintf("%s %s", r.Method, route)
+			spanName := r.Method
+			if route != "" {
+				spanName = fmt.Sprintf("%s %s", r.Method, route)
+			}
 
 			// Build attributes following OpenTelemetry HTTP semantic conventions
 			attrs := []attribute.KeyValue{
@@ -131,7 +136,7 @@ func RequestMiddleware(cfgState *config.ConfigState) func(http.Handler) http.Han
 				attribute.String("client.address", getClientIP(r, trustProxy)),
 			}
 
-			if route != r.URL.Path {
+			if route != "" {
 				attrs = append(attrs, attribute.String("http.route", route))
 			}
 
