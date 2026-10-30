@@ -591,6 +591,9 @@ func (s *Server) collectApplicableResourceTemplates(ctx context.Context, cfg *Co
 	return templates
 }
 
+// unknownToolName labels tools/call metrics for a tool that isn't registered.
+const unknownToolName = "unknown"
+
 // metricsMiddleware returns a metrics middleware with access to the server's metrics system
 func (s *Server) metricsMiddleware() func(mcp.MethodHandler) mcp.MethodHandler {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
@@ -605,6 +608,11 @@ func (s *Server) metricsMiddleware() func(mcp.MethodHandler) mcp.MethodHandler {
 					if toolReq, _ := GoSdkToolCallParamsToToolCallRequest(params); toolReq != nil {
 						toolName = toolReq.Name
 					}
+				}
+				// The name comes from the client: label calls to tools that
+				// aren't registered as "unknown" so they can't add a series each.
+				if !slices.Contains(s.GetEnabledTools(), toolName) {
+					toolName = unknownToolName
 				}
 			}
 

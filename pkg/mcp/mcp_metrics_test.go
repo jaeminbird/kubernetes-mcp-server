@@ -142,6 +142,30 @@ func (s *McpMetricsSuite) TestPrometheusInFlightRequestsReturnToZero() {
 	}
 }
 
+func (s *McpMetricsSuite) TestUnknownToolNamesShareOneLabel() {
+	s.InitMcpClient()
+
+	for _, name := range []string{"no_such_tool_1", "no_such_tool_2", "no_such_tool_3"} {
+		_, _ = s.CallTool(name, map[string]interface{}{})
+	}
+	_, err := s.CallTool("namespaces_list", map[string]interface{}{})
+	s.Require().Nilf(err, "call tool failed %v", err)
+
+	stats := s.mcpServer.GetMetrics().GetStats(s.T().Context())
+	s.Run("unregistered tool names are counted as unknown", func() {
+		s.Equal(int64(3), stats.ToolCallsByName["unknown"])
+		s.Equal(int64(3), stats.ToolErrorsByName["unknown"])
+	})
+	s.Run("unregistered tool names do not get their own label", func() {
+		for name := range stats.ToolCallsByName {
+			s.NotContains(name, "no_such_tool")
+		}
+	})
+	s.Run("registered tools keep their name", func() {
+		s.Equal(int64(1), stats.ToolCallsByName["namespaces_list"])
+	})
+}
+
 func (s *McpMetricsSuite) TestStatsInitializedBeforeCalls() {
 	s.InitMcpClient()
 	stats := s.mcpServer.GetMetrics().GetStats(s.T().Context())

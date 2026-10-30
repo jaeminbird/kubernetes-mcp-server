@@ -432,7 +432,7 @@ This endpoint returns metrics in OpenMetrics/Prometheus text format, suitable fo
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `k8s_mcp_tool_calls_total` | Counter | Total MCP tool calls (labeled by `tool_name`) |
+| `k8s_mcp_tool_calls_total` | Counter | Total MCP tool calls (labeled by `tool_name`; calls to tools that aren't registered use `unknown`) |
 | `k8s_mcp_tool_errors_total` | Counter | Total MCP tool errors (labeled by `tool_name`) |
 | `k8s_mcp_tool_duration_seconds` | Histogram | Tool call duration in seconds |
 | `k8s_mcp_http_requests_total` | Counter | HTTP requests (labeled by `http_request_method`, `url_path`, `http_response_status_class`) |
